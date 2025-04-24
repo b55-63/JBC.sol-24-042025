@@ -1,0 +1,46 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Capped.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+contract JBC is ERC20Capped, Ownable {
+    uint256 public constant VESTING_START = 1764672000; // 02/02/2026 UTC
+    uint256 public constant VESTING_DURATION = 12; // 12 months
+    uint256 public constant VESTING_PERCENT_PER_MONTH = 10; // 10%
+    address public constant VESTING_WALLET = 0xad5216087A087dB8210c2872aa03faac1Af59476;
+
+    mapping(address => uint256) public lockedAmount;
+    mapping(address => uint256) public lockStart;
+
+    constructor(address initialOwner)
+        ERC20("JimmyBoss Collective", "JBC")
+        ERC20Capped(1_000_000_000 * 10 ** 18)
+        Ownable(initialOwner)
+    {
+        _mint(initialOwner, cap());
+    }
+
+    function _update(address from, address to, uint256 amount) internal override {
+        if (from == VESTING_WALLET) {
+            lockedAmount[to] += amount;
+            lockStart[to] = VESTING_START;
+        }
+
+        if (from != address(0)) {
+            uint256 locked = lockedAmount[from];
+            if (locked > 0 && block.timestamp > VESTING_START) {
+                uint256 elapsedMonths = (block.timestamp - VESTING_START) / 30 days;
+                if (elapsedMonths >= VESTING_DURATION) {
+                    locked = 0;
+                } else {
+                    uint256 unlocked = (lockedAmount[from] * elapsedMonths) / VESTING_DURATION;
+                    locked = lockedAmount[from] - unlocked;
+                }
+            }
+            require(balanceOf(from) - amount >= locked, "JBC: Tokens are locked");
+        }
+
+        super._update(from, to, amount);
+    }
+}
